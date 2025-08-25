@@ -68,12 +68,14 @@ def extract_reviews(product, sort_by):
 
         reviews = product_review.get("data").get("reviews", [])
 
-        if reviews.get("pagination"):
-            total_review_pages = int(
-                reviews.get("pagination").get("pages")[-1].get("label", "1")
-            )
-        else:
-            total_review_pages = 0
+        if isinstance(total_review_pages, float):
+            try:
+                total_review_pages = int(
+                    reviews.get("pagination", {}).get("pages", [])[-1].get("label", "1")
+                )
+            except:
+                total_review_pages = 0
+
         if current_page == 0:
             print(
                 f"[Reviews] Found {total_review_pages} pages for item {product.get('item_id')}"
