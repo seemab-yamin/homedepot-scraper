@@ -204,6 +204,10 @@ def main():
         f"products_reviews_{category_url.split('/')[-2].split('/N-')[0]}.csv",
     )
     for _, row in cat_products_df.iterrows():
+        if row["URL"] in already_processed_products:
+            print(f"Skipping already processed product: {row['URL']}")
+            continue
+
         pr_df = process_product(row)
 
         print(f"Total reviews for {row['URL']}: {pr_df.shape}")
