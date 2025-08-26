@@ -253,7 +253,7 @@ def extract_reviews(product, sort_by):
 
     try:
         payload = payload.replace("item_id", str(product.get("item_id", ""))).replace(
-            "sort_by", str(sort_by)
+            "sort_by", sort_by
         )
 
         while current_page < total_review_pages:
@@ -277,13 +277,18 @@ def extract_reviews(product, sort_by):
                 )
                 break
             try:
-                reviews = product_review.get("data", {}).get("reviews", {})
+                data = product_review.get("data", {})
+                if not data:
+                    logger.error(
+                        f"[Reviews] No data found in API response for item {product.get('item_id', 'unknown')} page {current_page+1}"
+                    )
+                    break
+                reviews = data.get("reviews", {})
 
-                if isinstance(total_review_pages, float):
+                pagination_pages = reviews.get("pagination", {})
+                if isinstance(total_review_pages, float) and pagination_pages:
                     try:
-                        pagination_pages = reviews.get("pagination", {}).get(
-                            "pages", []
-                        )
+                        pagination_pages = pagination_pages.get("pages", [])
                         if pagination_pages and len(pagination_pages) > 0:
                             last_page_label = pagination_pages[-1].get("label", "1")
                             total_review_pages = int(last_page_label)
@@ -294,6 +299,8 @@ def extract_reviews(product, sort_by):
                             f"[Reviews] Error parsing pagination for item {product.get('item_id', 'unknown')}: {e}"
                         )
                         total_review_pages = 0
+                else:
+                    total_review_pages = 0
 
                 if current_page == 0:
                     logger.info(
