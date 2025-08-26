@@ -20,6 +20,7 @@ The crawler follows following workflow.
     - Drop duplicates by using review_id to remove product review duplicates.
 - Appending Each scraped product data in the output file [`products_review-category-name.csv`] after every successful product scraping.
 - `already_processed_products_file.txt` holds the products that are already processed to avoid duplicate data.
+- Logs will be saved in `./tmp/scraper.log` file.
 
 --- 
 

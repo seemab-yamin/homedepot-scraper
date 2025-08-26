@@ -264,7 +264,12 @@ def main():
 
     # Step 1: Process Category
     category_url = args.category_url
-    cat_products_df = process_category(category_url)
+    try:
+        category_url = category_url.split("?")[0]
+        cat_products_df = process_category(category_url)
+    except Exception as e:
+        logger.error(f"Error processing category {category_url}: {e}")
+        return
     logger.info(f"Total products in category: {cat_products_df.shape}")
 
     # Step 2: Process each product for reviews
