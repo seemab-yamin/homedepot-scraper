@@ -77,9 +77,10 @@ def process_product(row):
                 continue
 
     pr = script_data.get(f"base-catalog-{row['item_id']}")
-    row["oms_thd_sku"] = pr.get("identifiers").get("omsThdSku")
-    row["UPC"] = pr.get("identifiers").get("upc")
-    row["upc_gtin13"] = pr.get("identifiers").get("upcGtin13")
+    identifiers = pr.get("identifiers", {})
+    row["oms_thd_sku"] = identifiers.get("omsThdSku")
+    row["UPC"] = identifiers.get("upc")
+    row["upc_gtin13"] = identifiers.get("upcGtin13")
     for item in pr.get("specificationGroup"):
         for value in item.get("specifications"):
             row[value.get("specName")] = value.get("specValue")
@@ -210,7 +211,11 @@ def main():
     ]
 
     for _, row in cat_products_df.iterrows():
-        pr_df = process_product(row)
+        try:
+            pr_df = process_product(row)
+        except Exception as e:
+            print(f"Error processing product {row['URL']}: {e}")
+            continue
 
         print(f"Total reviews for {row['URL']}: {pr_df.shape}")
         if os.path.exists(category_products_reviews_file):
