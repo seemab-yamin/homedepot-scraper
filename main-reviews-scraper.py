@@ -289,7 +289,7 @@ def main():
         try:
             pr_df = process_product(row)
         except Exception as e:
-            logger.info(f"Error processing product {row['URL']}: {e}")
+            logger.error(f"Error processing product {row['URL']}: {e}")
             continue
 
         if os.path.exists(category_products_reviews_file):
