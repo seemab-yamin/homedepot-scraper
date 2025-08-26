@@ -29,12 +29,17 @@ HEADERS = {
     "x-hd-dc": "origin",
     "x-parent-trace-id": "c6655c2a3a2754cf7929858289866bd9/12563341903835392272",
     "x-thd-customer-token": "",
+    "Cookie": "bm_s=YAAQGpM2Fxt2ALqYAQAA/uYA5QOUTAMo7dxCiuft13uCwMHh7jQf263FFOfWBAElVhTHcpWeBNGgk4RZh5UJYz32nOlbMoiAIrmwIwchqfgEdQkwqlRo0VPmR/Ukgie3i0qPn2vssUJ4UP1+cSO9zusQ5zkSW3ib1/j7XLrlOvJputTxVPYeTSh++1rqfdRI62NWsxPJVlid7qYlwI0MKfuGY+knaJsmBPtrO1Hz3BtVSQIw0WydOR/19Du8IL6dE3/lzdD6XUJl8URCuzguSO7REjXCaqkdCQBmcwEDrumZiFhHunASEhySXB6LWvt5Q5RHPI1TYnCGMSDUQ4+zFxQVzWr9prEeCrajlCzV/yHM0xibZbOZMniYZqexI1LIkJxjUy4dsIxIwvds3Y8BUVaFgl4Yt8GW4p2CvZFVigV5xqsk6ihor0MVhz2qjmh4+sI1qDWdFK0SeLESmA7CJjFtqlk16TeeD8wrkIEtdLdnIk0Co64fe6Z9S/tvUMG0qkPb31je0PeS2Jn/yA057DnOZZJyNZwQKCoRJ01u8fCpEjDruxuS",
 }
 
 
 def api_request(url, payload):
     response = requests.request("POST", url, headers=HEADERS, data=payload)
     response.raise_for_status()
+    if len(response.content) < 500:
+        logger.warning(
+            f"[API] Response size for {url} is unusually small: {len(response.content)} bytes"
+        )
     logger.info(
         f"[API] POST {url} OK {response.status_code} | {len(response.content)} bytes"
     )
@@ -44,6 +49,10 @@ def api_request(url, payload):
 def html_request(url):
     response = requests.request("GET", url, headers=HEADERS)
     response.raise_for_status()
+    if len(response.content) < 500:
+        logger.warning(
+            f"[HTML] Response size for {url} is unusually small: {len(response.content)} bytes"
+        )
     logger.info(
         f"[HTML] GET {url} OK {response.status_code} | {len(response.content)} bytes"
     )
