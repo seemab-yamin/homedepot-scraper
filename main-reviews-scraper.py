@@ -5,11 +5,55 @@ from lxml import html
 from utils import extract_reviews, crawl_category, html_request
 import time
 import argparse
+import warnings
+import logging
+from logging.handlers import RotatingFileHandler
+
+warnings.filterwarnings("ignore", category=pd.errors.SettingWithCopyWarning)
+
+# GLOBAL VARIABLES
+TMP_DIR = "./tmp"
+os.makedirs(TMP_DIR, exist_ok=True)  # Ensure tmp directory exists
+# Shared log file for all scraper modules
+LOG_FILE = os.path.join(TMP_DIR, "scraper.log")
+MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+BACKUP_COUNT = 5  # Keep up to 5 old log files
+
+
+def setup_logging() -> logging.Logger:
+    """Configure and return shared logger to avoid duplication across modules"""
+    logger = logging.getLogger("homedepot")
+    if not logger.handlers:  # configure once
+        logger.setLevel(logging.INFO)
+        # Set up formatter with more readable format
+        fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        
+        # Console handler with explicit stream (stdout)
+        stream_h = logging.StreamHandler()
+        stream_h.setLevel(logging.INFO)
+        stream_h.setFormatter(fmt)
+        
+        # File handler
+        file_h = RotatingFileHandler(
+            LOG_FILE, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT
+        )
+        file_h.setLevel(logging.INFO)
+        file_h.setFormatter(fmt)
+        
+        logger.addHandler(stream_h)
+        logger.addHandler(file_h)
+        
+        # Prevent propagation to avoid duplicate logs
+        logger.propagate = False
+    return logger
 
 
 BASE_URL = "https://www.homedepot.com"
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Setup logging
+logger = setup_logging()
 
 
 def process_category(category_url):
@@ -23,12 +67,10 @@ def process_category(category_url):
         f"{category_name}_{category_id}_{store_id}_{delivery_zip}_products.json",
     )
     if os.path.exists(category_products_file):
-        print(f"Loading existing file: {category_products_file}")
         cat_products_df = pd.read_json(category_products_file)
         # replace nan with empty string
         cat_products_df = cat_products_df.fillna("")
     else:
-        print(f"Crawling category: {category_name}, {category_id}")
         page_size = 48
         start_index = 0
         total_products = float("inf")
@@ -41,7 +83,6 @@ def process_category(category_url):
                 str(page_size),
                 str(start_index),
             )
-            print(f"Total Products Count::\t{total_products}")
             start_index = start_index + page_size
             master_products.extend(products)
             time.sleep(0.5)
@@ -53,8 +94,6 @@ def process_category(category_url):
 
 def process_product(row):
     product_url = row["URL"]
-    print("* Variants Count:\t", row["variants_count"])
-
     raw_html = html_request(product_url)
     # Parse HTML with lxml
     tree = html.fromstring(raw_html)
@@ -69,52 +108,83 @@ def process_product(row):
             json_str = json_match.group(1)
             try:
                 script_data = json.loads(json_str)
-                print("Found ROOT_QUERY script data using XPath")
+
+                # Safely extract product data with null checks
+                pr = script_data.get(f"base-catalog-{row['item_id']}")
+                if pr:
+                    # Extract identifiers safely
+                    identifiers = pr.get("identifiers", {})
+                    row["oms_thd_sku"] = identifiers.get("omsThdSku")
+                    row["UPC"] = identifiers.get("upc")
+                    row["upc_gtin13"] = identifiers.get("upcGtin13")
+
+                    # Extract specifications safely
+                    specification_group = pr.get("specificationGroup", [])
+                    if specification_group:
+                        for item in specification_group:
+                            if item and item.get("specifications"):
+                                for value in item.get("specifications", []):
+                                    if (
+                                        value
+                                        and value.get("specName")
+                                        and value.get("specValue")
+                                    ):
+                                        row[value.get("specName")] = value.get(
+                                            "specValue"
+                                        )
+
+                    row["ColorVariation"] = bool(row.get("Finish"))
+
+                    # Extract details safely
+                    details = pr.get("details", {})
+                    if details:
+                        row["Description"] = details.get("description")
+                        row["Highlights"] = details.get("highlights", [])
+                        descriptive_attrs = details.get("descriptiveAttributes", [])
+                        row["descriptiveAttributes"] = [
+                            item.get("value")
+                            for item in descriptive_attrs
+                            if item and item.get("value")
+                        ]
+
+                    # Extract media safely
+                    media = pr.get("media", {})
+                    if media:
+                        videos = media.get("video", [])
+                        row["Videos"] = [
+                            {
+                                "type": vid.get("type"),
+                                "title": vid.get("title"),
+                                "dateModified": vid.get("dateModified"),
+                                "uploadDate": vid.get("uploadDate"),
+                                "videoStill": vid.get("videoStill"),
+                                "thumbnail": vid.get("thumbnail"),
+                                "shortDescription": vid.get("shortDescription"),
+                                "url": vid.get("url"),
+                            }
+                            for vid in videos
+                            if vid and vid.get("title")
+                        ]
+
+                        images = media.get("images", [])
+                        row["ImageURL"] = [
+                            img.get("url").replace("<SIZE>", "1000")
+                            for img in images
+                            if img and img.get("url")
+                        ]
+
                 break
-            except json.JSONDecodeError:
+
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    f"Failed to parse JSON for product {row.get('item_id', 'unknown')}: {e}"
+                )
                 continue
-            except json.JSONDecodeError:
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error processing script data for product {row.get('item_id', 'unknown')}: {e}"
+                )
                 continue
-
-    pr = script_data.get(f"base-catalog-{row['item_id']}")
-    identifiers = pr.get("identifiers", {})
-    row["oms_thd_sku"] = identifiers.get("omsThdSku")
-    row["UPC"] = identifiers.get("upc")
-    row["upc_gtin13"] = identifiers.get("upcGtin13")
-    for item in pr.get("specificationGroup"):
-        for value in item.get("specifications"):
-            row[value.get("specName")] = value.get("specValue")
-
-    row["ColorVariation"] = bool(row.get("Finish"))
-    row["Description"] = pr.get("details").get("description")
-    row["Highlights"] = pr.get("details").get("highlights", [])
-    row["descriptiveAttributes"] = [
-        item.get("value")
-        for item in pr.get("details").get("descriptiveAttributes", [])
-        if item.get("value")
-    ]
-    media = pr.get("media")
-
-    row["Videos"] = [
-        {
-            "type": vid.get("type"),
-            "title": vid.get("title"),
-            "dateModified": vid.get("dateModified"),
-            "uploadDate": vid.get("uploadDate"),
-            "videoStill": vid.get("videoStill"),
-            "thumbnail": vid.get("thumbnail"),
-            "shortDescription": vid.get("shortDescription"),
-            "url": vid.get("url"),
-        }
-        for vid in media.get("video")
-        if vid.get("title")
-    ]
-
-    row["ImageURL"] = [
-        img.get("url").replace("<SIZE>", "1000")
-        for img in media.get("images")
-        if img.get("url")
-    ]
 
     df = pd.DataFrame()
 
@@ -127,11 +197,8 @@ def process_product(row):
         "highestrating",
     ]
     for sort_by in sort_by_filters:
-        print(f"Extracting reviews sorted by {sort_by}...")
         er_data = extract_reviews(row, sort_by)
         df = pd.concat([df, pd.DataFrame(er_data)], ignore_index=True)
-        print(f"Reviews so far: {len(df)}")
-
         review_count = row.get("ReviewCount", 0) if row.get("ReviewCount", 0) else 0
         if int(review_count) <= 511:
             break
@@ -183,6 +250,7 @@ def process_product(row):
 
 
 def main():
+    print("Program Started...")
     parser = argparse.ArgumentParser(description="HomeDepot Reviews Scraper")
     parser.add_argument("category_url", help="Input Category URL")
     args = parser.parse_args()
@@ -197,7 +265,7 @@ def main():
     # Step 1: Process Category
     category_url = args.category_url
     cat_products_df = process_category(category_url)
-    print(f"Total products in category: {cat_products_df.shape}")
+    logger.info(f"Total products in category: {cat_products_df.shape}")
 
     # Step 2: Process each product for reviews
     category_products_reviews_file = os.path.join(
@@ -210,14 +278,15 @@ def main():
         ~cat_products_df["URL"].isin(already_processed_products)
     ]
 
+    logger.info(f"Products to process: {cat_products_df.shape}")
+
     for _, row in cat_products_df.iterrows():
         try:
             pr_df = process_product(row)
         except Exception as e:
-            print(f"Error processing product {row['URL']}: {e}")
+            logger.info(f"Error processing product {row['URL']}: {e}")
             continue
 
-        print(f"Total reviews for {row['URL']}: {pr_df.shape}")
         if os.path.exists(category_products_reviews_file):
             product_reviews_df = pd.read_csv(category_products_reviews_file)
             product_reviews_df = pd.concat(
@@ -230,7 +299,7 @@ def main():
         with open(already_processed_products_file, "a") as f:
             f.write(row["URL"] + "\n")
         already_processed_products.add(row["URL"])
-
+    print("Program Completed...")
 
 if __name__ == "__main__":
     main()

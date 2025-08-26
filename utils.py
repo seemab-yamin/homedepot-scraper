@@ -1,6 +1,9 @@
 import requests
 import time
+import logging
 
+# Use shared project logger
+logger = logging.getLogger("homedepot")
 
 BASE_URL = "https://www.homedepot.com"
 HEADERS = {
@@ -32,8 +35,8 @@ HEADERS = {
 def api_request(url, payload):
     response = requests.request("POST", url, headers=HEADERS, data=payload)
     response.raise_for_status()
-    print(
-        f"\t\t\t\t\t\t[API] POST {url} OK {response.status_code} | {len(response.content)} bytes"
+    logger.info(
+        f"[API] POST {url} OK {response.status_code} | {len(response.content)} bytes"
     )
     return response.json()
 
@@ -41,8 +44,8 @@ def api_request(url, payload):
 def html_request(url):
     response = requests.request("GET", url, headers=HEADERS)
     response.raise_for_status()
-    print(
-        f"\t\t\t\t\t\t[HTML] GET {url} OK {response.status_code} | {len(response.content)} bytes"
+    logger.info(
+        f"[HTML] GET {url} OK {response.status_code} | {len(response.content)} bytes"
     )
     return response.text
 
@@ -70,28 +73,29 @@ def extract_reviews(product, sort_by):
             ),
         )
 
-        reviews = product_review.get("data").get("reviews", [])
+        reviews = product_review.get("data", {}).get("reviews", {})
 
         if isinstance(total_review_pages, float):
             try:
-                total_review_pages = int(
-                    reviews.get("pagination", {}).get("pages", [])[-1].get("label", "1")
-                )
-            except:
+                pagination_pages = reviews.get("pagination", {}).get("pages", [])
+                if pagination_pages:
+                    total_review_pages = int(pagination_pages[-1].get("label", "1"))
+                else:
+                    total_review_pages = 0
+            except (ValueError, TypeError, IndexError):
                 total_review_pages = 0
 
         if current_page == 0:
-            print(
-                f"\t\t\t[Reviews] Found {total_review_pages} pages for item {product.get('item_id')}"
+            logger.info(
+                f"[Reviews] Found {total_review_pages} pages for item {product.get('item_id')}"
             )
 
-        if reviews.get("Includes").get("Products"):
-            stats = (
-                reviews.get("Includes")
-                .get("Products")
-                .get("store")
-                .get("FilteredReviewStatistics")
-            )
+        # Safely extract product statistics
+        includes = reviews.get("Includes", {})
+        products_data = includes.get("Products", {})
+
+        if products_data and products_data.get("store"):
+            stats = products_data.get("store", {}).get("FilteredReviewStatistics", {})
             product["VariantRating"] = stats.get("AverageOverallRating")
             product["TotalReviewCount"] = stats.get("TotalReviewCount")
             product["VariantTotalRecommendedCount"] = stats.get(
@@ -101,22 +105,24 @@ def extract_reviews(product, sort_by):
             product["VariantNotRecommendedCount"] = stats.get("NotRecommendedCount")
 
             try:
-                product["Recommended, %"] = round(
-                    (
-                        product["VariantRecommendedCount"]
-                        / product["VariantTotalRecommendedCount"]
+                recommended_count = product["VariantRecommendedCount"] or 0
+                total_recommended = product["VariantTotalRecommendedCount"] or 0
+                if total_recommended > 0:
+                    product["Recommended, %"] = round(
+                        (recommended_count / total_recommended) * 100, 2
                     )
-                    * 100,
-                    2,
-                )
-            except ZeroDivisionError:
+                else:
+                    product["Recommended, %"] = 0
+            except (ZeroDivisionError, TypeError):
                 product["Recommended, %"] = 0
 
-            for key, value in stats.get("ContextDataDistribution").items():
+            context_distribution = stats.get("ContextDataDistribution", {})
+            for key, value in context_distribution.items():
                 if isinstance(value, dict):
                     product[f"{key}Distribution"] = {
                         item.get("Value"): item.get("Count")
                         for item in value.get("Values", [])
+                        if item and item.get("Value") is not None
                     }
 
             product["RatingDistribution"] = [
@@ -136,7 +142,7 @@ def extract_reviews(product, sort_by):
         product["VariantReviewCount"] = reviews.get("TotalResults")
         review_results = reviews.get("Results", [])
         if not review_results:
-            print(f"\t\t\tNo reviews found for item {product.get('item_id')}")
+            logger.info(f"No reviews found for item {product.get('item_id')}")
             if master_rev_data:
                 return master_rev_data
             else:
@@ -146,15 +152,17 @@ def extract_reviews(product, sort_by):
             rev_data = {**product}
             rev_data["review_id"] = review.get("Id")
 
-            badges_order = review.get("BadgesOrder")
+            badges_order = review.get("BadgesOrder", [])
             if "verifiedPurchaser" in badges_order:
                 rev_data["VerifiedPurchase"] = True
             else:
                 rev_data["VerifiedPurchase"] = False
 
-            age = review.get("ContextDataValues").get("Age")
-            if age:  # Check if age exists to avoid KeyError
-                age_value = age.get("Value")
+            # Safely extract age data
+            context_data_values = review.get("ContextDataValues", {})
+            age_data = context_data_values.get("Age")
+            if age_data:  # Check if age exists to avoid KeyError
+                age_value = age_data.get("Value", "")
             else:
                 age_value = ""
             rev_data["Age"] = age_value
@@ -163,59 +171,83 @@ def extract_reviews(product, sort_by):
 
             rev_data["Recommended"] = review.get("IsRecommended")
 
+            # Safely extract photos
+            photos = review.get("Photos", [])
             rev_data["CustomerImages"] = [
-                item.get("Sizes").get("normal").get("Url")
-                for item in review.get("Photos", [])
+                item.get("Sizes", {}).get("normal", {}).get("Url", "")
+                for item in photos
+                if item and item.get("Sizes", {}).get("normal", {}).get("Url")
             ]
 
             rev_data["Date"] = review.get("SubmissionTime")
 
-            rev_data["ReviewForVariation"] = [
-                item.get("label")
-                for item in product["variant"]
-                if item.get("itemId") == review.get("ProductId")
-            ]
-            if rev_data.get("ReviewForVariation"):
-                rev_data["ReviewForVariation"] = rev_data["ReviewForVariation"][0]
+            # Safely extract variation info
+            product_variant = product.get("variant", [])
+            if product_variant:
+                rev_data["ReviewForVariation"] = [
+                    item.get("label")
+                    for item in product_variant
+                    if item and item.get("itemId") == review.get("ProductId")
+                ]
+                if rev_data.get("ReviewForVariation"):
+                    rev_data["ReviewForVariation"] = rev_data["ReviewForVariation"][0]
+                else:
+                    rev_data["ReviewForVariation"] = product.get("Title", "")
             else:
-                rev_data["ReviewForVariation"] = product.get("Title")
+                rev_data["ReviewForVariation"] = product.get("Title", "")
+
             rev_data["ReviewTitle"] = review.get("Title")
             rev_data["ReviewDescription"] = review.get("ReviewText")
             rev_data["ReviewStars"] = review.get("Rating")
+
+            # Safely extract secondary ratings
+            secondary_ratings = review.get("SecondaryRatings", {})
             rating_data = {
                 k + " Rating": v.get("Value")
-                for k, v in review.get("SecondaryRatings").items()
-                if isinstance(v, dict)
+                for k, v in secondary_ratings.items()
+                if isinstance(v, dict) and v.get("Value") is not None
             }
             rev_data = {**rev_data, **rating_data}
+
             rev_data["CustomerName"] = review.get("UserNickname")
             rev_data["CustomerLocation"] = review.get("UserLocation")
-            for item in review["ClientResponses"]:
+
+            # Safely extract client responses
+            client_responses = review.get("ClientResponses", [])
+            for item in client_responses:
                 if isinstance(item, dict):
-                    rev_data["ResponseDepartment"] = item["Department"]
-                    rev_data["ResponseDate"] = item["Date"]
-                    rev_data["ResponseText"] = (
-                        item["Response"]
-                        .rstrip("<!--[if ReviewResponse]><![endif]-->")
-                        .replace("<br />", "\n")
-                        .strip()
-                    )
+                    rev_data["ResponseDepartment"] = item.get("Department", "")
+                    rev_data["ResponseDate"] = item.get("Date", "")
+                    response_text = item.get("Response", "")
+                    if response_text:
+                        rev_data["ResponseText"] = (
+                            response_text.rstrip("<!--[if ReviewResponse]><![endif]-->")
+                            .replace("<br />", "\n")
+                            .strip()
+                        )
+                    else:
+                        rev_data["ResponseText"] = ""
                     break
 
             source = review.get("SyndicationSource")
             if source:
-                rev_data["ReviewOnSite"] = source.get("Name")
-                rev_data["ReviewSitePhrase"] = "Customer review from " + source.get(
-                    "Name"
-                )
+                rev_data["ReviewOnSite"] = source.get("Name", "")
+                site_name = source.get("Name", "")
+                if site_name:
+                    rev_data["ReviewSitePhrase"] = "Customer review from " + site_name
+                else:
+                    rev_data["ReviewSitePhrase"] = ""
                 try:
-                    rev_data["ResponseFrom"] = rev_data["ReviewOnSite"].rsplit(".", 1)[
-                        -2
-                    ]
-                except:
+                    if rev_data["ReviewOnSite"]:
+                        rev_data["ResponseFrom"] = rev_data["ReviewOnSite"].rsplit(
+                            ".", 1
+                        )[-2]
+                    else:
+                        rev_data["ResponseFrom"] = ""
+                except (IndexError, AttributeError):
                     rev_data["ResponseFrom"] = rev_data["ReviewOnSite"]
-                rev_data["Review Site Content Link"] = source.get("ContentLink")
-                rev_data["Review Site Logo Image URL"] = source.get("LogoImageUrl")
+                rev_data["ReviewSiteContentLink"] = source.get("ContentLink", "")
+                rev_data["ReviewSiteLogoImageURL"] = source.get("LogoImageUrl", "")
             else:
                 rev_data["ReviewOnSite"] = ""
                 rev_data["ReviewSitePhrase"] = ""
@@ -225,14 +257,14 @@ def extract_reviews(product, sort_by):
             rev_data["ReviewFromSite"] = bool(rev_data.get("ReviewOnSite"))
             master_rev_data.append(rev_data)
 
-        print(
-            f"\t\t\t\t[Reviews] Page {current_page+1}/{total_review_pages} collected; total reviews so far: {len(master_rev_data)}"
+        logger.info(
+            f"[Reviews] Page {current_page+1}/{total_review_pages} collected; total reviews so far: {len(master_rev_data)}"
         )
         current_page += 1
 
         time.sleep(0.5)  # Be polite and avoid hitting the server too hard
-    print(
-        f"\t\t[Reviews] Completed {len(master_rev_data)} reviews across {total_review_pages} pages for item {product.get('item_id')}"
+    logger.info(
+        f"[Reviews] Completed {len(master_rev_data)} reviews across {total_review_pages} pages for item {product.get('item_id')}"
     )
     return master_rev_data
 
@@ -259,12 +291,11 @@ def crawl_category(
 
     data = api_request(url, payload)
 
-    total_products = (
-        data.get("data").get("searchModel").get("searchReport").get("totalProducts")
-    )
+    search_model = data.get("data").get("searchModel")
+    total_products = search_model.get("searchReport").get("totalProducts")
 
     master_list = []
-    for product in data.get("data").get("searchModel").get("products", []):
+    for product in search_model.get("products", []):
         prod_dict = {
             "URL": BASE_URL + product.get("identifiers").get("canonicalUrl"),
             "Title": product.get("identifiers").get("productLabel"),
