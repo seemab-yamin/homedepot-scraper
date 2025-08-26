@@ -197,6 +197,8 @@ def process_product(row):
         "highestrating",
     ]
     for sort_by in sort_by_filters:
+        loggermsg = f"Processing reviews for product {row.get('item_id', 'unknown')} sorted by {sort_by}"
+        logger.info(loggermsg)
         er_data = extract_reviews(row, sort_by)
         df = pd.concat([df, pd.DataFrame(er_data)], ignore_index=True)
         review_count = row.get("ReviewCount", 0) if row.get("ReviewCount", 0) else 0
