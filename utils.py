@@ -266,7 +266,17 @@ def extract_reviews(product, sort_by):
                         "start_index", str(start_index)
                     ),
                 )
-
+            except TooManyRedirects:
+                logger.error(
+                    f"[Reviews] Too many redirects for item {product.get('item_id', 'unknown')} page {current_page+1}"
+                )
+                break
+            except RequestException as e:
+                logger.error(
+                    f"[Reviews] Request failed for item {product.get('item_id', 'unknown')} page {current_page+1}: {str(e)}"
+                )
+                break
+            try:
                 reviews = product_review.get("data", {}).get("reviews", {})
 
                 if isinstance(total_review_pages, float):
@@ -508,16 +518,6 @@ def extract_reviews(product, sort_by):
 
                 time.sleep(0.5)  # Be polite and avoid hitting the server too hard
 
-            except TooManyRedirects:
-                logger.error(
-                    f"[Reviews] Too many redirects for item {product.get('item_id', 'unknown')} page {current_page+1}"
-                )
-                break
-            except RequestException as e:
-                logger.error(
-                    f"[Reviews] Request failed for item {product.get('item_id', 'unknown')} page {current_page+1}: {str(e)}"
-                )
-                break
             except Exception as e:
                 logger.error(
                     f"[Reviews] Unexpected error processing reviews for item {product.get('item_id', 'unknown')} page {current_page+1}: {e}"
