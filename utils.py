@@ -32,14 +32,18 @@ HEADERS = {
 def api_request(url, payload):
     response = requests.request("POST", url, headers=HEADERS, data=payload)
     response.raise_for_status()
-    print(f"[API] POST {url} OK {response.status_code} | {len(response.content)} bytes")
+    print(
+        f"\t\t\t\t\t\t[API] POST {url} OK {response.status_code} | {len(response.content)} bytes"
+    )
     return response.json()
 
 
 def html_request(url):
     response = requests.request("GET", url, headers=HEADERS)
     response.raise_for_status()
-    print(f"[HTML] GET {url} OK {response.status_code} | {len(response.content)} bytes")
+    print(
+        f"\t\t\t\t\t\t[HTML] GET {url} OK {response.status_code} | {len(response.content)} bytes"
+    )
     return response.text
 
 
@@ -78,7 +82,7 @@ def extract_reviews(product, sort_by):
 
         if current_page == 0:
             print(
-                f"[Reviews] Found {total_review_pages} pages for item {product.get('item_id')}"
+                f"\t\t\t[Reviews] Found {total_review_pages} pages for item {product.get('item_id')}"
             )
 
         if reviews.get("Includes").get("Products"):
@@ -132,7 +136,7 @@ def extract_reviews(product, sort_by):
         product["VariantReviewCount"] = reviews.get("TotalResults")
         review_results = reviews.get("Results", [])
         if not review_results:
-            print(f"No reviews found for item {product.get('item_id')}")
+            print(f"\t\t\tNo reviews found for item {product.get('item_id')}")
             if master_rev_data:
                 return master_rev_data
             else:
@@ -222,13 +226,13 @@ def extract_reviews(product, sort_by):
             master_rev_data.append(rev_data)
 
         print(
-            f"[Reviews] Page {current_page+1}/{total_review_pages} collected; total reviews so far: {len(master_rev_data)}"
+            f"\t\t\t\t[Reviews] Page {current_page+1}/{total_review_pages} collected; total reviews so far: {len(master_rev_data)}"
         )
         current_page += 1
 
         time.sleep(0.5)  # Be polite and avoid hitting the server too hard
     print(
-        f"[Reviews] Completed {len(master_rev_data)} reviews across {total_review_pages} pages for item {product.get('item_id')}"
+        f"\t\t[Reviews] Completed {len(master_rev_data)} reviews across {total_review_pages} pages for item {product.get('item_id')}"
     )
     return master_rev_data
 
