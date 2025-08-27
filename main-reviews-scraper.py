@@ -201,11 +201,13 @@ def process_product(row):
         logger.info(loggermsg)
         er_data = extract_reviews(row, sort_by)
         df = pd.concat([df, pd.DataFrame(er_data)], ignore_index=True)
-        review_count = (
-            row.get("ReviewCount", 0).replace("(empty)", "0")
-            if row.get("ReviewCount", 0)
-            else 0
-        )
+        try:
+            review_count = int(
+                row.get("ReviewCount", 0) if row.get("ReviewCount", 0) else 0
+            )
+        except ValueError:
+            review_count = 0
+
         if int(review_count) <= 511:
             break
 
@@ -267,7 +269,7 @@ def main():
         f"products_reviews_{category_url.split('/')[-2].split('/N-')[0]}.csv",
     )
     if os.path.exists(category_products_reviews_file):
-        already_processed_products = (
+        already_processed_products = set(
             pd.read_csv(category_products_reviews_file, usecols=["URL"])["URL"]
             .unique()
             .tolist()
