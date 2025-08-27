@@ -17,9 +17,9 @@ The crawler follows following workflow.
 - Process each product by
     - First making HTML request and fetch some data from page source.
     - Crawl 510 reviews sorting by [ "newest", "oldest", "mosthelpfull", "photoreview", "lowestrating", "highestrating" ] using reviews API.
-    - Drop duplicates by using review_id to remove product review duplicates.
+    - Drop duplicates by using review_id to remove product review duplicates across each product.
 - Appending Each scraped product data in the output file [`products_review-category-name.csv`] after every successful product scraping.
-- `already_processed_products_file.txt` holds the products that are already processed to avoid duplicate data.
+- `already_processed_products` is a set variable in program that fetches the already processed URLs from the output file [`products_review-category-name.csv`] to avoid duplicate data extraction. This will be empty set if there is not output file.
 - Logs will be saved in `./tmp/scraper.log` file.
 
 --- 
@@ -28,15 +28,15 @@ The crawler follows following workflow.
 ### Categories to process
 Category Name	Category Path	Link	Approved?
 
-Electronic Door Locks	Hardware->Door Hardware->Electronic Door Locks	https://www.homedepot.com/b/Hardware-Door-Hardware-Door-Locks-Electronic-Door-Locks/N-5yc1vZc2bd	Yes
+Electronic Door Locks	Hardware->Door Hardware->Electronic Door Locks	https://www.homedepot.com/b/Hardware-Door-Hardware-Door-Locks-Electronic-Door-Locks/N-5yc1vZc2bd	Yes 1/227
 
-Door Lock Combo Packs	Hardware->Door Hardware->Door Lock Combo Packs	https://www.homedepot.com/b/Hardware-Door-Hardware-Door-Locks-Door-Lock-Combo-Packs/N-5yc1vZc2g4	Yes
+Door Lock Combo Packs	Hardware->Door Hardware->Door Lock Combo Packs	https://www.homedepot.com/b/Hardware-Door-Hardware-Door-Locks-Door-Lock-Combo-Packs/N-5yc1vZc2g4	Yes 4/139
 
-Deadbolts	Hardware->Door Hardware->Door Locks->Deadbolts	https://www.homedepot.com/b/Hardware-Door-Hardware-Door-Locks-Deadbolts/N-5yc1vZcjqk	Yes
+Deadbolts	Hardware->Door Hardware->Door Locks->Deadbolts	https://www.homedepot.com/b/Hardware-Door-Hardware-Door-Locks-Deadbolts/N-5yc1vZcjqk	Yes 0/158
 
-Smart Locks	Hardware->Door Hardware->Smart Locks	https://www.homedepot.com/b/Smart-Home-Smart-Devices-Smart-Home-Security-Smart-Locks/N-5yc1vZc7by	Yes
+Smart Locks	Hardware->Door Hardware->Smart Locks	https://www.homedepot.com/b/Smart-Home-Smart-Devices-Smart-Home-Security-Smart-Locks/N-5yc1vZc7by	Yes 8/56
 
-Electronic Locksets	Hardware->Door Hardware->Door Locks->Electronic Door Locks->Electronic Locksets	https://www.homedepot.com/b/Hardware-Door-Hardware-Door-Locks-Electronic-Door-Locks-Electronic-Locksets/N-5yc1vZ2fkp3gk	Yes
+Electronic Locksets	Hardware->Door Hardware->Door Locks->Electronic Door Locks->Electronic Locksets	https://www.homedepot.com/b/Hardware-Door-Hardware-Door-Locks-Electronic-Door-Locks-Electronic-Locksets/N-5yc1vZ2fkp3gk	Yes 30/91
 
 
 ### Notes:
