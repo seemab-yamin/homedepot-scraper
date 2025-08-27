@@ -27,22 +27,22 @@ def setup_logging() -> logging.Logger:
         logger.setLevel(logging.INFO)
         # Set up formatter with more readable format
         fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        
+
         # Console handler with explicit stream (stdout)
         stream_h = logging.StreamHandler()
         stream_h.setLevel(logging.INFO)
         stream_h.setFormatter(fmt)
-        
+
         # File handler
         file_h = RotatingFileHandler(
             LOG_FILE, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT
         )
         file_h.setLevel(logging.INFO)
         file_h.setFormatter(fmt)
-        
+
         logger.addHandler(stream_h)
         logger.addHandler(file_h)
-        
+
         # Prevent propagation to avoid duplicate logs
         logger.propagate = False
     return logger
@@ -201,7 +201,11 @@ def process_product(row):
         logger.info(loggermsg)
         er_data = extract_reviews(row, sort_by)
         df = pd.concat([df, pd.DataFrame(er_data)], ignore_index=True)
-        review_count = row.get("ReviewCount", 0) if row.get("ReviewCount", 0) else 0
+        review_count = (
+            row.get("ReviewCount", 0).replace("(empty)", "0")
+            if row.get("ReviewCount", 0)
+            else 0
+        )
         if int(review_count) <= 511:
             break
 
@@ -257,15 +261,21 @@ def main():
     parser.add_argument("category_url", help="Input Category URL")
     args = parser.parse_args()
 
-    already_processed_products_file = os.path.join(OUTPUT_DIR, "processed_products.txt")
-    if os.path.exists(already_processed_products_file):
-        with open(already_processed_products_file, "r") as f:
-            already_processed_products = set(line.strip() for line in f)
+    category_url = args.category_url
+    category_products_reviews_file = os.path.join(
+        OUTPUT_DIR,
+        f"products_reviews_{category_url.split('/')[-2].split('/N-')[0]}.csv",
+    )
+    if os.path.exists(category_products_reviews_file):
+        already_processed_products = (
+            pd.read_csv(category_products_reviews_file, usecols=["URL"])["URL"]
+            .unique()
+            .tolist()
+        )
     else:
         already_processed_products = set()
 
     # Step 1: Process Category
-    category_url = args.category_url
     try:
         category_url = category_url.split("?")[0]
         cat_products_df = process_category(category_url)
@@ -275,11 +285,6 @@ def main():
     logger.info(f"Total products in category: {cat_products_df.shape}")
 
     # Step 2: Process each product for reviews
-    category_products_reviews_file = os.path.join(
-        OUTPUT_DIR,
-        f"products_reviews_{category_url.split('/')[-2].split('/N-')[0]}.csv",
-    )
-
     # remove records that are already processed
     cat_products_df = cat_products_df[
         ~cat_products_df["URL"].isin(already_processed_products)
@@ -303,10 +308,9 @@ def main():
         else:
             pr_df.to_csv(category_products_reviews_file, index=False)
 
-        with open(already_processed_products_file, "a") as f:
-            f.write(row["URL"] + "\n")
         already_processed_products.add(row["URL"])
     print("Program Completed...")
+
 
 if __name__ == "__main__":
     main()
